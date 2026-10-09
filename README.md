@@ -24,11 +24,29 @@
 - vectors[] retains named vectors until replaced or cleared
 - new_vect[] holds temporary results and is reused 
 
-# Notes:
-- getvect() was over 600 lines, split into 
-- internal command handlers
-- Version 1.0 was working, however, getvect()
-- But getvect() and psuedo code needed revisions 
+# Version History
+- Version 1.5
+  WIP version that was used for breaking up getvect() from 600 lines to multiple internal handler function
+  for easier debugging and readibility.
+  
+- Version 2.0
+  Updated version that saw significant changes in vector.c
+  Vector processing function getvect() split into:
+  
+    1. display_vector_command()
+    2. handle_opeeration()
+    3. handle_assignment()
+    4. handle_assignment_operation()
+    5. valid_vector_name
 
-# Progress status
-- Currently working on final code audit for Version 2.0 [debugging and finishing error catching functions] 
+  As well as improved error catching and debugging using errno library.
+
+  Some notable changes in vectop.c this update were:
+
+  1. is_blank_line() used to check for whitespaces for cleaner UI when user wants an empty line
+  2. Significant error catching added for overlong inputs
+ 
+- Version 2.1
+  Added Makefile and slightly tweaked vector.c header. Currently auditing style for final version 2.2.
+
+  
