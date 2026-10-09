@@ -10,7 +10,7 @@
 *   - Version 1.0 was working, however, getvect()
 *     But getvect() and psuedo code needed revisions   
 * Compile:
-*   - gcc -Wall -Wextra -o main vectop.c vector.c
+*   - gcc -Wall -Wextra -Wpedantic -Werror -o main vectop.c vector.c -lm
 * Run:
 *   - ./main
 ****************************************************************/
