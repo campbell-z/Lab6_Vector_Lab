@@ -6,26 +6,20 @@
 * Version: 2.0
 * Notes:
 *   - getvect() was over 600 lines, split into 
-*   internal command handlers
+*     internal command handlers
+*   - Version 1.0 was working, however, getvect()
+*     But getvect() and psuedo code needed revisions   
 * Compile:
 *   - gcc -Wall -Wextra -o main vectop.c vector.c
 * Run:
 *   - ./main
 ****************************************************************/
 
-/***************************************************************************************************
-* Pseudo Code:
-* User inputs at least 2 vectors
-* getvect function gets vectors, places them into vector array
-* User calls operation helper function
-* Perform vectop via helper function  
-* Pass by reference in new_vect array //WANT TO CYCLE THROUGH THESE TO MINIMIZE STACK MEMORY USAGE
-* Return values
-***************************************************************************************************/
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
+#include <math.h>
 
 #include "struct.h"
 #include "vector.h"
@@ -43,7 +37,14 @@ static int new_vect_index = 0;
 static void display_vector_command (char *tokens[]);
 static void handle_operation (char *tokens[]);
 static void handle_assignment (char *tokens[], int count);
-static void handle_assignment_operation (char *tokens)
+static void handle_assignment_operation (char *tokens[]);
+static int valid_vector_name (const char *name);
+
+// Returns nonzero when name fits in vector.name and is not empty
+static int valid_vector_name (const char *name)
+{
+    return name != NULL && name[0] != '\0' && strlen (name) < sizeof vectors[0].name;
+}
 
 // Vector memory functions
 
@@ -65,24 +66,29 @@ int add_vector (Vector new_vector)
 {
     int index;
 
-    index = findvect (new_vector.name);
-
-    if (index >= 0)
+    if (memchr (new_vector.name, '\0', sizeof new_vector.name) == NULL || new_vector.name[0] == '\0')
     {
-        vectors[index] = new_vector;
+        return -1;
+    }
+
+   index = findvect (new_vector.name);
+
+   if (index >= 0)
+   {
+    vectors [index] = new_vector;
+    return 0;
+   }
+
+   for (int i = 0; i < MAX_VECTORS; i++)
+   {
+    if (vectors[i].name[0] == '\0')
+    {
+        vectors[i] = new_vector;
         return 0;
     }
+   }
 
-    for (int i = 0; i < MAX_VECTORS; i++)
-    {
-        if (vectors[i].name[0] == '\0')
-        {
-            vectors[i] = new_vector;
-            return 0;
-        }
-    }
-
-    return -1;
+   return -1;
 
 }
 
@@ -152,22 +158,42 @@ int resopvect (Vector *a, Vector *b, char operation, double scalar, Vector *resu
     switch (operation)
     {
         case OP_ADD:
-            addvect (a, b, result);
+            if (a == NULL || b == NULL || result == NULL)
+            {
+                return -1;
+            }
+        addvect (a, b, result);
             break;
 
         case OP_SUB:
+             if (a == NULL || b == NULL || result == NULL)
+            {
+                return -1;
+            }
             subvect (a, b, result);
             break;
     
         case OP_MULT:
+             if (a == NULL || result == NULL)
+            {
+                return -1;
+            }
             scalmult (a, scalar, result);
             break;
         
         case OP_DOT:
+             if (a == NULL || b == NULL || scalar_result == NULL)
+            {
+                return -1;
+            }
             *scalar_result = dotprod (a, b);
             break;
         
         case OP_CROSS:
+             if (a == NULL || b == NULL || result == NULL)
+            {
+                return -1;
+            }
             crossprod (a, b, result);
             break;
         
@@ -229,9 +255,17 @@ int is_number (const char *token)
 {
     char *endptr;
 
-    strtof (token, &endptr);
+    double value;
 
-    return token[0] != '\0' && *endptr == '\0';
+    if (token == NULL || token[0] == '\0')
+    {
+        return 0;
+    }
+
+    errno = 0;
+    value = strtod (token, &endptr);
+
+    return endptr != token && *endptr == '\0' && errno != ERANGE && isfinite (value);
 }
 
 Command get_command (const char *input)
@@ -300,7 +334,7 @@ void getvect (char *input)
             break;
 
         case 3:
-            handle_operation (tokenize);
+            handle_operation (tokens);
             break;
 
         case 4:
@@ -326,7 +360,561 @@ static void display_vector_command (char *tokens[])
 
     disvect (vectors[index]);
 }
-          
+ 
+
+static void handle_operation (char *tokens[])
+{
+    Vector *a = NULL;
+    Vector *b = NULL;
+
+    double scalar = 0.0;
+    double scalar_result = 0.0;
+
+    int index_a;
+    int index_b;
+    int result;
+
+    switch (tokens[1][0])
+    {
+        case '+':
+        {
+            if (is_number (tokens[0]) || is_number (tokens[2]))
+            {
+                error();
+                return;
+            }
+
+            index_a = findvect (tokens[0]);
+            index_b = findvect (tokens[2]);
+
+            if (index_a == -1)
+            {
+                printf("Error: Vector %s not found.\n", tokens[0]);
+                return;
+            }
+
+            if (index_b == -1)
+            {
+                printf("Error: Vector %s not found.\n", tokens[2]);
+                return;
+            }
+
+            a = &vectors[index_a];
+            b = &vectors[index_b];
+
+            result = resopvect (a, b, OP_ADD, 0.0, &new_vect[new_vect_index], NULL);
+
+            if (result != 0)
+            {
+                error();
+                return;
+            }
+
+            break;
+        }
+
+        case '-':
+        {
+            if (is_number (tokens[0]) || is_number (tokens[2]))
+            {
+                error();
+                return;
+            }
+
+            index_a = findvect (tokens[0]);
+            index_b = findvect (tokens[2]);
+
+            if (index_a == -1)
+            {
+                printf("Error: Vector %s not found.\n", tokens[0]);
+                return;
+            }
+
+            if (index_b == -1)
+            {
+                printf("Error: Vector %s not found.\n", tokens[2]);
+                return;
+            }
+
+            a = &vectors[index_a];
+            b = &vectors[index_b];
+
+            result = resopvect (a, b, OP_SUB, 0.0, &new_vect[new_vect_index], NULL);
+
+            if (result != 0)
+            {
+                error();
+                return;
+            }
+
+            break;
+        }
+        
+        case '.':
+        {
+            if (is_number (tokens[0]) || is_number (tokens[2]))
+            {
+                error();
+                return;
+            }
+
+            index_a = findvect (tokens[0]);
+            index_b = findvect (tokens[2]);
+
+            if (index_a == -1)
+            {
+                printf("Error: Vector %s not found.\n", tokens[0]);
+                return;
+            }
+
+            if (index_b == -1)
+            {
+                printf("Error: Vector %s not found.\n", tokens[2]);
+                return;
+            }
+
+            a = &vectors[index_a];
+            b = &vectors[index_b];
+
+            result = resopvect (a, b, OP_DOT, 0.0, NULL, &scalar_result);
+
+            if (result != 0)
+            {
+                error();
+                return;
+            }
+
+            printf("%f\n", scalar_result);
+            return;
+        }
+
+        case 'x':
+        {
+            if (is_number (tokens[0]) || is_number(tokens[2]))
+            {
+                error();
+                return;
+            }
+
+            index_a = findvect (tokens[0]);
+            index_b = findvect (tokens[2]);
+
+            if (index_a == -1)
+            {
+                printf("Error: Vector %s not found.\n", tokens[0]);
+                return;
+            }
+
+            if (index_b == -1)
+            {
+                printf("Error: Vector %s not found.\n", tokens[2]);
+                return;
+            }
+
+            a = &vectors[index_a];
+            b = &vectors[index_b];
+
+            result = resopvect (a, b, OP_CROSS, 0.0, &new_vect[new_vect_index], NULL);
+
+            if (result != 0)
+            {
+                error();
+                return;
+            }
+
+            break;
+        }
+
+        case '*':
+        {
+            // a * 2
+            if (!is_number (tokens[0]) && is_number (tokens[2]))
+            {
+                index_a = findvect (tokens[0]);
+
+                if (index_a == -1)
+                {
+                    printf("Error: Vector %s not found.\n", tokens[0]);
+                    return;
+                }
+
+                scalar = strtod (tokens[2], NULL);
+
+                result = resopvect (&vectors[index_a], NULL, OP_MULT, scalar, &new_vect[new_vect_index], NULL);
+
+            }
+            // 2 * a
+            else if (is_number (tokens[0]) && !is_number (tokens[2]))
+            {
+                index_a = findvect (tokens[2]);
+
+                if (index_a == -1)
+                {
+                    printf("Error: Vector %s not found.\n", tokens[2]);
+                    return;
+                }
+
+                scalar = strtod (tokens[0], NULL);
+
+                result = resopvect (&vectors[index_a], NULL, OP_MULT, scalar, &new_vect[new_vect_index], NULL);
+
+            }
+            // 2 * 3 or a * b
+            else
+            {
+                error();
+                return;
+            }
+
+            if (result != 0)
+            {
+                error();
+                return;
+            }
+
+            break;
+        }
+
+        default:
+            error();
+            return;
+    }
+
+    strcpy (new_vect[new_vect_index].name, "ans");
+
+    disvect (new_vect[new_vect_index]);
+
+    new_vect_index++;
+
+    if (new_vect_index >= MAX_VECTORS)
+    {
+        new_vect_index = 0;
+    }
+}
+
+static void handle_assignment (char *tokens[], int count)
+{
+    Vector assignment;
+
+    if (strcmp (tokens[1], "=") != 0)
+    {
+        error();
+        return;
+    }
+
+    if (!valid_vector_name (tokens[0]))
+    {
+        printf("Error: Vector name must be 1 to %zu characters long.\n", sizeof assignment.name -1);
+        return;
+    }
+
+    /*
+    * Four tokens:
+    * a = 1 2
+    */
+    if (count == 4)
+    {
+        if (!is_number (tokens[2]) || !is_number (tokens[3]))
+        {
+            error();
+            return;
+        }
+
+        strcpy (assignment.name, tokens[0]);
+
+        assignment.x = strtod (tokens[2], NULL);
+        assignment.y = strtod (tokens[3], NULL);
+        assignment.z = 0.0;
+
+        if (add_vector (assignment) == -1)
+        {
+            printf("Error: Vector storage full.\n");
+            return;
+        }
+
+        disvect (assignment);
+        return;
+    }
+
+    /*
+    * Five tokens:
+    * a = 1 2 3
+    * c  = a + b
+    * c = a - b
+    * c = a * 2
+    c = 2 * a
+    c = a . b
+    c = a x b
+    */
+    if (count == 5)
+    {
+        // Vector creation
+        if (is_number (tokens[2]) &&
+            is_number (tokens[3]) &&
+            is_number (tokens[4]))
+            {
+                strcpy (assignment.name, tokens[0]);
+
+                assignment.x = strtod (tokens[2], NULL);
+                assignment.y = strtod (tokens[3], NULL);
+                assignment.z = strtod (tokens[4], NULL);
+
+                if (add_vector (assignment) == -1)
+                {
+                    printf("Error: Vector storgage full.\n");
+                    return;
+                }
+
+                disvect (assignment);
+                return;
+            }
+
+            // All other cases are assigned operations or errors
+            handle_assignment_operation (tokens);
+            return;
+    }
+
+    error();
+}
+
+static void handle_assignment_operation (char *tokens[])
+{
+    Vector *a;
+    Vector *b;
+
+    double scalar = 0.0;
+    double scalar_result = 0.0;
+
+    int index_a;
+    int index_b;
+    int result;
+
+    switch (tokens[3][0])
+    {
+        case '+':
+        {
+            if (is_number (tokens[2]) || is_number (tokens[4]))
+            {
+                error();
+                return;
+            }
+
+            index_a = findvect (tokens[2]);
+            index_b = findvect (tokens[4]);
+
+            if (index_a == -1)
+            {
+                printf("Error: Vector %s not found.\n", tokens[2]);
+                return;
+            }
+
+            if (index_b == -1)
+            {
+                printf("Error: Vector %s not found.\n", tokens[4]);
+                return;
+            }
+
+            a = &vectors[index_a];
+            b = &vectors[index_b];
+
+            result = resopvect (a, b, OP_ADD, 0.0, &new_vect[new_vect_index], NULL);
+
+            if (result != 0)
+            {
+                error();
+                return;
+            }
+
+            break;
+        }
+
+        case '-':
+        {
+             if (is_number (tokens[2]) || is_number (tokens[4]))
+        {
+            error();
+            return;
+        }
+
+        index_a = findvect (tokens[2]);
+        index_b = findvect (tokens[4]);
+
+        if (index_a == -1)
+        {
+            printf("Error: Vector %s not found.\n", tokens[2]);
+            return;
+        }
+
+        if (index_b == -1)
+        {
+            printf("Error: Vector %s not found.\n", tokens[4]);
+            return;
+        }
+
+        a = &vectors[index_a];
+        b = &vectors[index_b];
+
+        result = resopvect (a, b, OP_SUB, 0.0, &new_vect[new_vect_index], NULL);
+
+        if (result != 0)
+        {
+            error();
+            return;
+        }
+
+        break;
+
+        }
+
+        case 'x':
+        {
+             if (is_number (tokens[2]) || is_number (tokens[4]))
+        {
+            error();
+            return;
+        }
+
+        index_a = findvect (tokens[2]);
+        index_b = findvect (tokens[4]);
+
+        if (index_a == -1)
+        {
+            printf("Error: Vector %s not found.\n", tokens[2]);
+            return;
+        }
+
+        if (index_b == -1)
+        {
+            printf("Error: Vector %s not found.\n", tokens[4]);
+            return;
+        }
+
+        a = &vectors[index_a];
+        b = &vectors[index_b];
+
+        result = resopvect (a, b, OP_CROSS, 0.0, &new_vect[new_vect_index], NULL);
+
+        if (result != 0)
+        {
+            error();
+            return;
+        }
+
+        break;
+        
+        }
+
+        case '.':
+        {
+             if (is_number (tokens[2]) || is_number (tokens[4]))
+        {
+            error();
+            return;
+        }
+
+        index_a = findvect (tokens[2]);
+        index_b = findvect (tokens[4]);
+
+        if (index_a == -1)
+        {
+            printf("Error: Vector %s not found.\n", tokens[2]);
+            return;
+        }
+
+        if (index_b == -1)
+        {
+            printf("Error: Vector %s not found.\n", tokens[4]);
+            return;
+        }
+
+        a = &vectors[index_a];
+        b = &vectors[index_b];
+
+        result = resopvect (a, b, OP_DOT, 0.0, NULL, &scalar_result);
+
+        if (result != 0)
+        {
+            error();
+            return;
+        }
+
+        printf("%s = %f\n", tokens[0], scalar_result);
+        return;
+
+        }
+
+        case '*':
+        {
+            // c = a * 2
+            if (!is_number (tokens[2]) && is_number (tokens[4]))
+            {
+                index_a = findvect (tokens[2]);
+
+                if (index_a == -1)
+                {
+                    printf("Error: Vector %s not found.\n", tokens[2]);
+                    return;
+                }
+
+                scalar = strtod (tokens[4], NULL);
+                
+                result = resopvect (&vectors[index_a], NULL, OP_MULT, scalar, &new_vect[new_vect_index], NULL);
+            }
+
+            // c = 2 * a
+            else if (is_number (tokens[2]) && !is_number (tokens[4]))
+            {
+                index_a = findvect (tokens[4]);
+
+                if (index_a == -1)
+                {
+                    printf("Error: Vector %s not found.\n", tokens[4]);
+                    return;
+                }
+
+                scalar = strtod (tokens[2], NULL);
+                
+                result = resopvect (&vectors[index_a], NULL, OP_MULT, scalar, &new_vect[new_vect_index], NULL);
+            }
+
+            // c = 2 * 3 or c = a * b
+            else
+            {
+                error();
+                return;
+            }
+
+            if (result != 0)
+            {
+                error();
+                return;
+            }
+
+        break;
+        }
+
+    default:
+        error();
+        return;
+    }
+    // All vector-producing assigned operations use the requested destination name
+    strcpy (new_vect[new_vect_index].name, tokens[0]);
+
+    if (add_vector (new_vect[new_vect_index]) == -1)
+    {
+        printf("Error: Vector storage full.\n");
+        return;
+    }
+
+    disvect (new_vect[new_vect_index]);
+
+    new_vect_index++;
+
+    if (new_vect_index >= MAX_VECTORS)
+    {
+        new_vect_index = 0;
+    }
+}
 
 void quit (void)
 {
